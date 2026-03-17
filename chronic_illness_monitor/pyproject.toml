@@ -1,0 +1,30 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name        = "chronic_illness_monitor"
+version     = "0.1.0"
+description = "NCD patient monitoring — ML pipeline with warning engine"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "scikit-learn>=1.3",
+    "scipy>=1.11",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "pyarrow>=14.0",
+    "sqlalchemy>=2.0",
+    "psycopg2-binary>=2.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chronic_illness_monitor*"]
+
+[project.scripts]
+cim-ingest   = "chronic_illness_monitor.layer1.ingestion_pipeline:main"
+cim-etl      = "chronic_illness_monitor.layer2.etl_pipeline:main"
+cim-train    = "chronic_illness_monitor.layer3.training_pipeline:main"
+cim-score    = "chronic_illness_monitor.layer4.inference_pipeline:main"

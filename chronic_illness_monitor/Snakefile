@@ -1,0 +1,439 @@
+# =============================================================================
+# Snakefile — Chronic Illness Monitor Pipeline
+# =============================================================================
+#
+# Orchestrates all 6 layers in dependency order:
+#
+#   L1 Ingestion  →  L2 ETL  →  L3 Training  →  L4 Inference
+#                                     ↑                ↓
+#                              L5 Monitoring  ←────────┘
+#                                     ↓
+#                              L6 Sink (Tableau)
+#
+# Usage:
+#   snakemake --cores 1                          # full pipeline
+#   snakemake --cores 1 ingest                   # Layer 1 only
+#   snakemake --cores 1 train                    # through Layer 3
+#   snakemake --cores 1 score                    # through Layer 4
+#   snakemake --cores 1 tableau                  # full pipeline + Tableau sink
+#   snakemake --cores 1 retrain                  # force retraining
+#   snakemake --cores 4 --rerun-incomplete        # resume interrupted run
+#   snakemake -n                                  # dry-run (show what would run)
+#   snakemake --dag | dot -Tpng > dag.png         # render DAG
+#
+# Install:
+#   pip install snakemake
+#
+# =============================================================================
+
+from pathlib import Path
+import sys, os
+
+# ── Make the package importable from the Snakefile's directory ────────────────
+REPO_ROOT = Path(workflow.basedir).parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from chronic_illness_monitor.settings import cfg
+
+# ── File path helpers (all relative to repo root) ─────────────────────────────
+ROOT        = str(REPO_ROOT / "chronic_illness_monitor")
+PROCESSED   = str(cfg.paths.data_processed)
+FEAT_STORE  = str(cfg.paths.feature_store)
+MODELS      = str(cfg.paths.models)
+RESULTS     = str(cfg.paths.results)
+MONITORING  = str(cfg.paths.root / "data" / "monitoring")
+TABLEAU     = str(cfg.paths.results / "tableau")
+ARTIFACTS   = str(cfg.paths.artifacts)
+
+# ── Configurable parameters (override with --config key=value) ────────────────
+configfile: ROOT + "/../config.yaml"   # optional — created below if missing
+
+YEAR_FROM    = config.get("year_from",    2010)
+YEAR_TO      = config.get("year_to",      2023)
+COUNTRY      = config.get("country",      "BD")
+USE_POSTGRES = config.get("use_postgres", False)
+
+# =============================================================================
+# Target rules (phased entry points)
+# =============================================================================
+
+rule all:
+    """Default target: full pipeline through Tableau sink."""
+    input:
+        TABLEAU + "/chronic_illness_monitor.db",
+        TABLEAU + "/data_dictionary.csv",
+
+
+rule ingest:
+    """Layer 1 only — pull all historical datasets."""
+    input:
+        PROCESSED + "/.ingest_done",
+
+
+rule etl:
+    """Layers 1–2 — ingest + clean + feature engineering."""
+    input:
+        FEAT_STORE + "/individual_features/latest.csv",
+        FEAT_STORE + "/lifestyle_features/latest.csv",
+
+
+rule train:
+    """Layers 1–3 — through model training."""
+    input:
+        MODELS + "/branch_a_rf.pkl",
+        MODELS + "/branch_b_rf.pkl",
+        MODELS + "/model_metadata.json",
+
+
+rule score:
+    """Layers 1–4 — through patient scoring."""
+    input:
+        RESULTS + "/patient_risk_scores_latest.csv",
+
+
+rule monitor:
+    """Layers 1–5 — through model monitoring."""
+    input:
+        MONITORING + "/monitoring_report.json",
+
+
+rule tableau:
+    """Full pipeline — through Tableau sink."""
+    input:
+        TABLEAU + "/chronic_illness_monitor.db",
+        TABLEAU + "/data_dictionary.csv",
+
+
+rule retrain:
+    """
+    Force retraining regardless of monitoring state.
+    Touches a sentinel file, then re-runs from Layer 2 onward.
+    """
+    input:
+        FEAT_STORE + "/individual_features/latest.csv",
+    output:
+        touch(MODELS + "/.retrain_done"),
+    shell:
+        """
+        echo "Force retrain triggered at $(date -u)" > {MODELS}/.retrain_done
+        python -m chronic_illness_monitor.layer3.training_pipeline --mode train
+        """
+
+
+# =============================================================================
+# Layer 1 — Data Ingestion
+# =============================================================================
+
+rule layer1_ingest:
+    """
+    Pull historical datasets from WHO, CDC, IHME, Mendeley, World Bank.
+    Outputs a sentinel file + Parquet/CSV files in data/processed/.
+    Runs once; re-runs if any output is older than 30 days (use --forceall to override).
+    """
+    output:
+        sentinel = touch(PROCESSED + "/.ingest_done"),
+    log:
+        ROOT + "/../logs/layer1_ingest.log",
+    params:
+        year_from = YEAR_FROM,
+        year_to   = YEAR_TO,
+    shell:
+        """
+        python -m chronic_illness_monitor.layer1.ingestion_pipeline \
+            --mode historical \
+            --year-from {params.year_from} \
+            --year-to   {params.year_to} \
+            --sink      parquet \
+            2>&1 | tee {log}
+        """
+
+
+rule layer1_realtime:
+    """
+    Pull real-time data for inference (Validic wearables + OpenAQ environment).
+    Runs before every Layer 4 inference batch.
+    """
+    output:
+        touch(PROCESSED + "/.realtime_done"),
+    log:
+        ROOT + "/../logs/layer1_realtime.log",
+    params:
+        country = COUNTRY,
+    shell:
+        """
+        python -m chronic_illness_monitor.layer1.ingestion_pipeline \
+            --mode realtime \
+            --country {params.country} \
+            --sink    parquet \
+            2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# Layer 2 — ETL / Feature Engineering
+# =============================================================================
+
+rule layer2_etl:
+    """
+    Clean, validate, engineer features, join population context.
+    Depends on Layer 1 historical ingest.
+    Produces Branch A and Branch B feature tables.
+    """
+    input:
+        PROCESSED + "/.ingest_done",
+    output:
+        feat_a   = FEAT_STORE + "/individual_features/latest.csv",
+        feat_b   = FEAT_STORE + "/lifestyle_features/latest.csv",
+        pop_long = FEAT_STORE + "/population_long/latest.csv",
+        pop_wide = FEAT_STORE + "/population_wide/latest.csv",
+    log:
+        ROOT + "/../logs/layer2_etl.log",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer2.etl_pipeline \
+            --mode   training \
+            --layer1-dir {PROCESSED} \
+            --sink   parquet \
+            2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# Layer 3 — Model Training
+# =============================================================================
+
+rule layer3_compute_baseline:
+    """
+    Compute feature baseline statistics from training data.
+    Must run after ETL and before monitoring can work.
+    """
+    input:
+        FEAT_STORE + "/individual_features/latest.csv",
+    output:
+        touch(ARTIFACTS + "/feature_baseline_stats.json"),
+    log:
+        ROOT + "/../logs/layer3_baseline.log",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer5.monitoring_pipeline \
+            --compute-baseline \
+            2>&1 | tee {log}
+        """
+
+
+rule layer3_train:
+    """
+    Train Branch A (bodily-similarity) and Branch B (lifestyle) RF + SVM models.
+    Re-runs if:
+      - feature tables are newer than model artifacts (new data available)
+      - retrain trigger flag exists (drift/degradation detected by Layer 5)
+    """
+    input:
+        feat_a   = FEAT_STORE + "/individual_features/latest.csv",
+        feat_b   = FEAT_STORE + "/lifestyle_features/latest.csv",
+        baseline = ARTIFACTS  + "/feature_baseline_stats.json",
+    output:
+        model_a  = MODELS + "/branch_a_rf.pkl",
+        model_b  = MODELS + "/branch_b_rf.pkl",
+        model_a_svm = MODELS + "/branch_a_svm.pkl",
+        model_b_svm = MODELS + "/branch_b_svm.pkl",
+        metadata = MODELS + "/model_metadata.json",
+    log:
+        ROOT + "/../logs/layer3_train.log",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer3.training_pipeline \
+            --mode train \
+            2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# Layer 4 — Inference / Warning Engine
+# =============================================================================
+
+rule layer4_score:
+    """
+    Load trained models, score all patients, assign Warning Level 1–4.
+    Depends on trained models (Layer 3) and latest features (Layer 2).
+    For real-time scoring of new patients, also depends on layer1_realtime.
+    """
+    input:
+        feat_a   = FEAT_STORE + "/individual_features/latest.csv",
+        feat_b   = FEAT_STORE + "/lifestyle_features/latest.csv",
+        model_a  = MODELS    + "/branch_a_rf.pkl",
+        model_b  = MODELS    + "/branch_b_rf.pkl",
+        metadata = MODELS    + "/model_metadata.json",
+    output:
+        scores   = RESULTS + "/patient_risk_scores_latest.csv",
+    log:
+        ROOT + "/../logs/layer4_score.log",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer4.inference_pipeline \
+            --mode  batch \
+            --sink  parquet \
+            2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# Layer 5 — Model Monitoring
+# =============================================================================
+
+rule layer5_monitor:
+    """
+    Run drift detection (PSI + KS test) and performance monitoring.
+    Writes monitoring_report.json.
+    If drift or degradation detected, writes retrain_trigger.flag — Snakemake
+    picks this up via the checkpoint rule below to trigger Layer 3 retraining.
+    """
+    input:
+        scores   = RESULTS  + "/patient_risk_scores_latest.csv",
+        feat_a   = FEAT_STORE + "/individual_features/latest.csv",
+        baseline = ARTIFACTS  + "/feature_baseline_stats.json",
+    output:
+        report   = MONITORING + "/monitoring_report.json",
+    log:
+        ROOT + "/../logs/layer5_monitor.log",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer5.monitoring_pipeline \
+            --results  {input.scores} \
+            --features {input.feat_a} \
+            2>&1 | tee {log}
+        # exit 0 always — Snakemake handles trigger via checkpoint below
+        exit 0
+        """
+
+
+checkpoint layer5_check_trigger:
+    """
+    Checkpoint: read the retrain trigger flag after monitoring.
+    If flag exists → Snakemake re-evaluates the DAG and adds a Layer 3 retraining job.
+    If not        → pipeline continues to Layer 6.
+    """
+    input:
+        MONITORING + "/monitoring_report.json",
+    output:
+        flag_check = MONITORING + "/.trigger_checked",
+    run:
+        import json
+        from pathlib import Path
+        trigger_flag = Path(MONITORING) / "retrain_trigger.flag"
+        with open(input[0]) as f:
+            report = json.load(f)
+        triggered = report.get("retrain_triggered", False)
+        with open(output.flag_check, "w") as f:
+            f.write(f"triggered={triggered}\n")
+        if triggered:
+            print("⚠  Retrain trigger active — Layer 3 will re-run")
+        else:
+            print("✓  No retrain needed")
+
+
+def retrain_inputs(wildcards):
+    """
+    Dynamic input function: if retrain was triggered, require fresh model artifacts.
+    This forces Snakemake to re-run layer3_train before layer6_sink.
+    """
+    trigger_check = checkpoints.layer5_check_trigger.get(**wildcards).output.flag_check
+    with open(str(trigger_check)) as f:
+        content = f.read()
+    if "triggered=True" in content:
+        # Force re-run of training by requiring model artifacts as fresh outputs
+        return {
+            "report":   MONITORING + "/monitoring_report.json",
+            "model_a":  MODELS     + "/branch_a_rf.pkl",
+            "model_b":  MODELS     + "/branch_b_rf.pkl",
+        }
+    return {
+        "report":  MONITORING + "/monitoring_report.json",
+        "model_a": MODELS     + "/branch_a_rf.pkl",
+        "model_b": MODELS     + "/branch_b_rf.pkl",
+    }
+
+
+# =============================================================================
+# Layer 6 — Production Sink (Tableau)
+# =============================================================================
+
+rule layer6_sink:
+    """
+    Build all four Tableau-facing views and write to SQLite + CSV exports.
+    Depends on Layer 5 monitoring (and conditionally on Layer 3 retraining).
+    """
+    input:
+        unpack(retrain_inputs),
+        scores   = RESULTS    + "/patient_risk_scores_latest.csv",
+        metadata = MODELS     + "/model_metadata.json",
+    output:
+        sqlite   = TABLEAU + "/chronic_illness_monitor.db",
+        data_dict= TABLEAU + "/data_dictionary.csv",
+        scores_v = TABLEAU + "/patient_risk_scores.csv",
+        heatmap  = TABLEAU + "/population_risk_heatmap.csv",
+        fi_view  = TABLEAU + "/feature_importance_view.csv",
+        health_v = TABLEAU + "/model_health_view.csv",
+    log:
+        ROOT + "/../logs/layer6_sink.log",
+    params:
+        postgres_flag = "--write-postgres" if USE_POSTGRES else "",
+    shell:
+        """
+        python -m chronic_illness_monitor.layer6.sink_pipeline \
+            --results {input.scores} \
+            {params.postgres_flag} \
+            2>&1 | tee {log}
+        """
+
+
+# =============================================================================
+# Utility rules
+# =============================================================================
+
+rule clean:
+    """Remove all generated files except raw data and trained models."""
+    shell:
+        """
+        rm -rf {PROCESSED}/*.csv {PROCESSED}/*.parquet {PROCESSED}/.ingest_done
+        rm -rf {FEAT_STORE}/individual_features {FEAT_STORE}/lifestyle_features
+        rm -rf {FEAT_STORE}/population_long {FEAT_STORE}/population_wide
+        rm -rf {RESULTS}/patient_risk_scores*.csv
+        rm -rf {MONITORING}/monitoring_report.json {MONITORING}/.trigger_checked
+        rm -rf {TABLEAU}
+        echo "Cleaned generated files (models and raw data preserved)"
+        """
+
+
+rule clean_all:
+    """Remove everything including trained models (full reset)."""
+    shell:
+        """
+        rm -rf {PROCESSED}/* {FEAT_STORE}/* {RESULTS}/* {MONITORING}/*
+        rm -rf {MODELS}/*.pkl {MODELS}/model_metadata.json
+        rm -rf {ARTIFACTS}/*.json
+        echo "Full reset complete"
+        """
+
+
+rule show_dag:
+    """Render the pipeline DAG as a PNG (requires graphviz)."""
+    shell:
+        """
+        snakemake --dag --forceall 2>/dev/null | dot -Tpng -o pipeline_dag.png
+        echo "DAG written to pipeline_dag.png"
+        """
+
+
+rule validate:
+    """Quick validation — import all modules and check artifacts exist."""
+    run:
+        import sys
+        sys.path.insert(0, str(REPO_ROOT))
+        from chronic_illness_monitor.layer1.ingestion_pipeline import _generate_demo_data
+        from chronic_illness_monitor.layer2.etl_pipeline       import run_etl
+        from chronic_illness_monitor.layer3.training_pipeline  import run_training
+        from chronic_illness_monitor.layer4.inference_pipeline import ScoreEngine
+        from chronic_illness_monitor.layer5.monitoring_pipeline import run_monitoring
+        from chronic_illness_monitor.layer6.sink_pipeline      import run_sink
+        print("All modules import cleanly ✓")

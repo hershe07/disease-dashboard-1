@@ -1,0 +1,22 @@
+# config.yaml — Snakemake pipeline configuration
+# Override any value with: snakemake --config key=value
+
+# ── Data range ────────────────────────────────────────────
+year_from: 2010
+year_to:   2023
+
+# ── Real-time country (ISO2) ──────────────────────────────
+country: "BD"          # Bangladesh (primary dataset origin)
+
+# ── Database sink ─────────────────────────────────────────
+use_postgres: false    # set true to also write to PostgreSQL
+
+# ── Retraining thresholds ─────────────────────────────────
+psi_alert_threshold:    0.25
+ks_pvalue_threshold:    0.05
+f1_degradation_thresh:  0.10
+
+# ── Model hyperparameters (passed to Layer 3) ─────────────
+rf_n_estimators:  300
+rf_max_depth:     12
+cv_folds:         5

@@ -1,0 +1,7 @@
+population_group_id,population_group_name,measure_id,measure_name,location_id,location_name,sex_id,sex_name,age_id,age_name,cause_id,cause_name,metric_id,metric_name,year,val,upper,lower
+1,All Population,1,Deaths,1,Global,3,Both,22,All ages,294,All causes,1,Number,2023,60043088.86146642,61239779.90044624,59045446.995901234
+1,All Population,1,Deaths,1,Global,3,Both,22,All ages,294,All causes,2,Percent,2023,1.0,1.0,1.0
+1,All Population,1,Deaths,1,Global,3,Both,22,All ages,294,All causes,3,Rate,2023,744.4132752036382,759.2498319602228,732.0445269811883
+1,All Population,2,DALYs (Disability-Adjusted Life Years),1,Global,3,Both,22,All ages,294,All causes,1,Number,2023,2799135266.2993536,3084150438.573339,2566897218.5084476
+1,All Population,2,DALYs (Disability-Adjusted Life Years),1,Global,3,Both,22,All ages,294,All causes,2,Percent,2023,1.0,1.0,1.0
+1,All Population,2,DALYs (Disability-Adjusted Life Years),1,Global,3,Both,22,All ages,294,All causes,3,Rate,2023,34703.63518658286,38237.24882802512,31824.351507793384
