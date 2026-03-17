@@ -1,0 +1,29 @@
+# ── WHO GHO (no key needed — leave as is) ─────────────
+WHO_GHO_BASE_URL=https://ghoapi.azureedge.net/api
+
+# ── CDC (free token — strongly recommended) ────────────
+CDC_APP_TOKEN=I0ZS5lIL5Zvh6yAmuXAbK6rrP
+CDC_CDI_ENDPOINT=https://data.cdc.gov/resource/g4ie-h725.json
+CDC_BRFSS_ENDPOINT=https://data.cdc.gov/resource/dttw-5yxu.json
+
+# ── World Bank (no key needed — leave as is) ───────────
+WORLDBANK_API_BASE=https://api.worldbank.org/v2
+
+# ── OpenAQ (free key) ──────────────────────────────────
+OPENAQ_API_KEY=7c754209cd4a2bb551e7127e4bfc9d6e681c6143751d4926d94381a8c9b1b68a
+OPENAQ_BASE_URL=https://api.openaq.org/v3
+
+# ── Validic (leave blank — only needed for real wearables) ──
+VALIDIC_ORG_ID=
+VALIDIC_TOKEN=
+VALIDIC_BASE_URL=https://app.validic.com/v1
+
+# ── PostgreSQL (leave blank — SQLite used by default) ──
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=chronic_illness_db
+DB_USER=
+DB_PASSWORD=
+
+# ── Logging ────────────────────────────────────────────
+LOG_LEVEL=INFO
