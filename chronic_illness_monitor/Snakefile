@@ -30,13 +30,18 @@ from pathlib import Path
 import sys, os
 
 # ── Make the package importable from the Snakefile's directory ────────────────
-REPO_ROOT = Path(workflow.basedir).parent
+# workflow.basedir = folder containing this Snakefile = chronic_illness_monitor/
+SNAKEFILE_DIR = Path(workflow.basedir)   # .../medfusion/chronic_illness_monitor
+REPO_ROOT     = SNAKEFILE_DIR.parent     # .../medfusion
 sys.path.insert(0, str(REPO_ROOT))
 
 from chronic_illness_monitor.settings import cfg
 
-# ── File path helpers (all relative to repo root) ─────────────────────────────
-ROOT        = str(REPO_ROOT / "chronic_illness_monitor")
+# ── File path helpers ─────────────────────────────────────────────────────────
+ROOT        = str(SNAKEFILE_DIR)         # .../medfusion/chronic_illness_monitor
+
+# Create logs dir immediately (needed before any shell rule runs)
+os.makedirs(ROOT + "/logs", exist_ok=True)
 PROCESSED   = str(cfg.paths.data_processed)
 FEAT_STORE  = str(cfg.paths.feature_store)
 MODELS      = str(cfg.paths.models)
@@ -46,7 +51,7 @@ TABLEAU     = str(cfg.paths.results / "tableau")
 ARTIFACTS   = str(cfg.paths.artifacts)
 
 # ── Configurable parameters (override with --config key=value) ────────────────
-configfile: ROOT + "/../config.yaml"   # optional — created below if missing
+configfile: ROOT + "/config.yaml"
 
 YEAR_FROM    = config.get("year_from",    2010)
 YEAR_TO      = config.get("year_to",      2023)
@@ -133,7 +138,7 @@ rule layer1_ingest:
     output:
         sentinel = touch(PROCESSED + "/.ingest_done"),
     log:
-        ROOT + "/../logs/layer1_ingest.log",
+        ROOT + "/logs/layer1_ingest.log",
     params:
         year_from = YEAR_FROM,
         year_to   = YEAR_TO,
@@ -144,7 +149,7 @@ rule layer1_ingest:
             --year-from {params.year_from} \
             --year-to   {params.year_to} \
             --sink      parquet \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -156,7 +161,7 @@ rule layer1_realtime:
     output:
         touch(PROCESSED + "/.realtime_done"),
     log:
-        ROOT + "/../logs/layer1_realtime.log",
+        ROOT + "/logs/layer1_realtime.log",
     params:
         country = COUNTRY,
     shell:
@@ -165,7 +170,7 @@ rule layer1_realtime:
             --mode realtime \
             --country {params.country} \
             --sink    parquet \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -187,14 +192,14 @@ rule layer2_etl:
         pop_long = FEAT_STORE + "/population_long/latest.csv",
         pop_wide = FEAT_STORE + "/population_wide/latest.csv",
     log:
-        ROOT + "/../logs/layer2_etl.log",
+        ROOT + "/logs/layer2_etl.log",
     shell:
         """
         python -m chronic_illness_monitor.layer2.etl_pipeline \
             --mode   training \
             --layer1-dir {PROCESSED} \
             --sink   parquet \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -212,12 +217,12 @@ rule layer3_compute_baseline:
     output:
         touch(ARTIFACTS + "/feature_baseline_stats.json"),
     log:
-        ROOT + "/../logs/layer3_baseline.log",
+        ROOT + "/logs/layer3_baseline.log",
     shell:
         """
         python -m chronic_illness_monitor.layer5.monitoring_pipeline \
             --compute-baseline \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -239,12 +244,12 @@ rule layer3_train:
         model_b_svm = MODELS + "/branch_b_svm.pkl",
         metadata = MODELS + "/model_metadata.json",
     log:
-        ROOT + "/../logs/layer3_train.log",
+        ROOT + "/logs/layer3_train.log",
     shell:
         """
         python -m chronic_illness_monitor.layer3.training_pipeline \
             --mode train \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -267,13 +272,13 @@ rule layer4_score:
     output:
         scores   = RESULTS + "/patient_risk_scores_latest.csv",
     log:
-        ROOT + "/../logs/layer4_score.log",
+        ROOT + "/logs/layer4_score.log",
     shell:
         """
         python -m chronic_illness_monitor.layer4.inference_pipeline \
             --mode  batch \
             --sink  parquet \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 
@@ -295,13 +300,13 @@ rule layer5_monitor:
     output:
         report   = MONITORING + "/monitoring_report.json",
     log:
-        ROOT + "/../logs/layer5_monitor.log",
+        ROOT + "/logs/layer5_monitor.log",
     shell:
         """
         python -m chronic_illness_monitor.layer5.monitoring_pipeline \
             --results  {input.scores} \
             --features {input.feat_a} \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         # exit 0 always — Snakemake handles trigger via checkpoint below
         exit 0
         """
@@ -375,7 +380,7 @@ rule layer6_sink:
         fi_view  = TABLEAU + "/feature_importance_view.csv",
         health_v = TABLEAU + "/model_health_view.csv",
     log:
-        ROOT + "/../logs/layer6_sink.log",
+        ROOT + "/logs/layer6_sink.log",
     params:
         postgres_flag = "--write-postgres" if USE_POSTGRES else "",
     shell:
@@ -383,7 +388,7 @@ rule layer6_sink:
         python -m chronic_illness_monitor.layer6.sink_pipeline \
             --results {input.scores} \
             {params.postgres_flag} \
-            2>&1 | tee {log}
+            >> {log} 2>&1
         """
 
 

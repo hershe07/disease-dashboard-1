@@ -1,6 +1,6 @@
 """
 layer2/etl_pipeline.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 Layer 2 — validation, feature engineering, population join, feature store.
 All imports use the package path, so no config shadowing is possible.
 """
@@ -29,12 +29,12 @@ try:
 except ImportError:
     _HAS_SA = False
 
-# ── Artifact paths ────────────────────────────────────────────────────────────
+# -- Artifact paths ------------------------------------------------------------
 _IMPUTER_ART = cfg.paths.artifacts / "individual_imputer_stats.json"
 _JOINER_ART  = cfg.paths.artifacts / "population_fill_medians.json"
 _QUARANTINE  = cfg.paths.feature_store / "quarantine.csv"
 
-# ── Indicator rename map ──────────────────────────────────────────────────────
+# -- Indicator rename map ------------------------------------------------------
 _IND_RENAME = {
     "NCD_HYP_PREVALENCE_A":  "pop_bp_prevalence",
     "NCD_GLUC_04":           "pop_diabetes_prevalence",
@@ -55,9 +55,9 @@ _AGE_RISK = {"0-14":0.05,"15-29":0.20,"30-44":1.00,"45-59":2.80,
              "60-74":5.50,"75+":8.20,"All ages":1.00}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Validation
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 @dataclass
 class ValidationReport:
@@ -75,15 +75,15 @@ class ValidationReport:
     def pass_rate(self): return self.valid_rows/self.total_rows if self.total_rows else 0
 
     def summary(self):
-        lines = [f"\n{'═'*52}",f"  Validation: {self.dataset_name}",f"{'─'*52}",
+        lines = [f"\n{'='*52}",f"  Validation: {self.dataset_name}",f"{'-'*52}",
                  f"  Total      : {self.total_rows:>8,}",
                  f"  Valid      : {self.valid_rows:>8,}  ({self.pass_rate:.1%})",
                  f"  Quarantined: {self.quarantined_rows:>8,}",]
         for col,rate in self.null_rates.items():
-            if rate>0.05: lines.append(f"  ⚠ null {col}: {rate:.1%}")
+            if rate>0.05: lines.append(f"  WARNING null {col}: {rate:.1%}")
         for col,cnt in self.range_violations.items():
-            lines.append(f"  ⚠ range {col}: {cnt:,} rows")
-        lines.append(f"{'═'*52}\n")
+            lines.append(f"  WARNING range {col}: {cnt:,} rows")
+        lines.append(f"{'='*52}\n")
         return "\n".join(lines)
 
 
@@ -146,9 +146,9 @@ def validate_population(df: pd.DataFrame, name="population") -> tuple[pd.DataFra
     return clean, rpt
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Individual transformer
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class IndividualTransformer:
     def __init__(self): self._stats: dict = {}; self._fitted = False
@@ -275,9 +275,9 @@ class IndividualTransformer:
         self._fitted = True
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Population transformer
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class PopulationTransformer:
     def transform(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -364,9 +364,9 @@ class PopulationTransformer:
             logger.error("Pivot failed: %s", exc); return pd.DataFrame()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Feature joiner
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class FeatureJoiner:
     def __init__(self): self._fills: dict = {}
@@ -480,9 +480,9 @@ class FeatureJoiner:
             with open(_JOINER_ART) as f: self._fills = json.load(f)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Feature store
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class FeatureStore:
     def __init__(self, db_url: Optional[str] = None):
@@ -530,9 +530,9 @@ class FeatureStore:
         except Exception as exc: logger.error("DB write %s: %s", table, exc)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Orchestrator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def _validate_all(data):
     clean = {}
@@ -609,11 +609,11 @@ def main():
     l1dir = Path(args.layer1_dir) if args.layer1_dir else None
     db    = cfg.db.url if args.sink=="db" else None
     results = run_etl(l1dir, mode="training" if args.mode=="dry-run" else args.mode, db_url=db)
-    print("\n" + "═"*60 + "\n  LAYER 2 ETL SUMMARY\n" + "═"*60)
+    print("\n" + "="*60 + "\n  LAYER 2 ETL SUMMARY\n" + "="*60)
     for k,v in results.items():
         if k.endswith(("_features","_long","_wide","_transformed")):
-            print(f"  ✓  {k:<40s}  {len(v):>7,} rows  {len(v.columns)} cols")
-    print("═"*60+"\n")
+            print(f"  OK  {k:<40s}  {len(v):>7,} rows  {len(v.columns)} cols")
+    print("="*60+"\n")
 
 
 if __name__ == "__main__":

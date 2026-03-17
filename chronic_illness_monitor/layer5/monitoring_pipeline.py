@@ -1,6 +1,6 @@
 """
 layer5/monitoring_pipeline.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 Layer 5 — Model Monitoring + Scheduled Retraining
 
 Responsibilities:
@@ -16,7 +16,7 @@ Responsibilities:
                         exceeds threshold, write a trigger file and
                         return exit code 1 so Snakemake reruns Layer 3.
 
-  4. Retraining execution — when triggered, run Layer 2 → Layer 3
+  4. Retraining execution — when triggered, run Layer 2 -> Layer 3
                         in sequence using accumulated real patient data
                         alongside original training data.
 
@@ -44,7 +44,7 @@ from chronic_illness_monitor.settings import cfg, get_logger
 
 logger = get_logger("layer5.monitoring_pipeline")
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# -- Paths ---------------------------------------------------------------------
 MONITORING_DIR    = cfg.paths.root / "data" / "monitoring"
 MONITORING_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -54,7 +54,7 @@ DRIFT_LOG         = MONITORING_DIR / "drift_log.csv"
 RETRAIN_TRIGGER   = MONITORING_DIR / "retrain_trigger.flag"
 PERF_LOG          = MONITORING_DIR / "performance_log.csv"
 
-# ── Thresholds ────────────────────────────────────────────────────────────────
+# -- Thresholds ----------------------------------------------------------------
 PSI_WARN_THRESHOLD    = 0.10   # Population Stability Index — yellow
 PSI_ALERT_THRESHOLD   = 0.25   # PSI — red, trigger retrain
 KS_PVALUE_THRESHOLD   = 0.05   # KS test p-value below = significant drift
@@ -68,9 +68,9 @@ MONITORED_FEATURES = [
 ]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 1. Baseline statistics (computed once at training time, saved as artifact)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def compute_baseline(df: pd.DataFrame) -> dict:
     """
@@ -104,7 +104,7 @@ def compute_baseline(df: pd.DataFrame) -> dict:
         }
     with open(BASELINE_STATS, "w") as f:
         json.dump(stats_dict, f, indent=2)
-    logger.info("Baseline stats saved → %s (%s features)", BASELINE_STATS, len(stats_dict))
+    logger.info("Baseline stats saved -> %s (%s features)", BASELINE_STATS, len(stats_dict))
     return stats_dict
 
 
@@ -116,17 +116,17 @@ def load_baseline() -> dict:
         return json.load(f)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 2. Drift detection
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def compute_psi(baseline_counts: list, current_vals: np.ndarray,
                 bin_edges: list) -> float:
     """
     Population Stability Index.
-    PSI < 0.10  → no significant change
-    PSI 0.10–0.25 → moderate shift, monitor closely
-    PSI > 0.25  → major shift, retrain
+    PSI < 0.10  -> no significant change
+    PSI 0.10-0.25 -> moderate shift, monitor closely
+    PSI > 0.25  -> major shift, retrain
     """
     baseline_counts = np.array(baseline_counts, dtype=float)
     baseline_pct = baseline_counts / (baseline_counts.sum() + 1e-10)
@@ -193,9 +193,9 @@ def detect_drift(
     return drift_report
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 3. Performance monitoring
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def monitor_performance(results_df: pd.DataFrame) -> dict:
     """
@@ -248,9 +248,9 @@ def monitor_performance(results_df: pd.DataFrame) -> dict:
     return metrics
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 4. Retrain trigger logic
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def should_retrain(drift_report: dict, perf_metrics: dict,
                    metadata_path: Path) -> tuple[bool, list[str]]:
@@ -281,7 +281,7 @@ def should_retrain(drift_report: dict, perf_metrics: dict,
         if drop > F1_DEGRADATION_THRESH:
             reasons.append(
                 f"F1 degraded by {drop:.3f} "
-                f"(ref={ref_f1:.3f} → current={current_f1:.3f})"
+                f"(ref={ref_f1:.3f} -> current={current_f1:.3f})"
             )
 
     return len(reasons) > 0, reasons
@@ -292,7 +292,7 @@ def write_trigger(reasons: list[str]) -> None:
                "reasons": reasons}
     with open(RETRAIN_TRIGGER, "w") as f:
         json.dump(payload, f, indent=2)
-    logger.warning("Retrain trigger written → %s\n  Reasons: %s",
+    logger.warning("Retrain trigger written -> %s\n  Reasons: %s",
                    RETRAIN_TRIGGER, reasons)
 
 
@@ -301,9 +301,9 @@ def clear_trigger() -> None:
         RETRAIN_TRIGGER.unlink()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 5. Report writer
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def write_report(drift_report: dict, perf_metrics: dict,
                  retrain_triggered: bool, reasons: list[str]) -> None:
@@ -323,7 +323,7 @@ def write_report(drift_report: dict, perf_metrics: dict,
     }
     with open(MONITORING_REPORT, "w") as f:
         json.dump(report, f, indent=2)
-    logger.info("Monitoring report → %s", MONITORING_REPORT)
+    logger.info("Monitoring report -> %s", MONITORING_REPORT)
 
     # Append to drift log CSV for trend tracking
     drift_rows = []
@@ -342,9 +342,9 @@ def write_report(drift_report: dict, perf_metrics: dict,
         perf_row.to_csv(PERF_LOG, mode="a", header=write_header, index=False)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Orchestrator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def run_monitoring(results_path: Optional[Path] = None,
                    features_path: Optional[Path] = None,
@@ -354,7 +354,7 @@ def run_monitoring(results_path: Optional[Path] = None,
 
     Returns True if retrain was triggered.
     """
-    logger.info("═══ Layer 5: Model Monitoring ═══")
+    logger.info("=== Layer 5: Model Monitoring ===")
 
     # Load latest scored results
     if results_path is None:
@@ -424,9 +424,9 @@ def run_monitoring(results_path: Optional[Path] = None,
 
 
 def _print_summary(drift, perf, triggered, reasons):
-    print("\n" + "═"*62)
+    print("\n" + "="*62)
     print("  LAYER 5 MONITORING SUMMARY")
-    print("═"*62)
+    print("="*62)
     print(f"  Features monitored : {len(drift)}")
     if drift:
         by_status = {"ok":0, "warn":0, "alert":0}
@@ -436,16 +436,16 @@ def _print_summary(drift, perf, triggered, reasons):
         worst = sorted(drift.items(), key=lambda x: -x[1]["psi"])[:5]
         print(f"\n  Top features by PSI drift:")
         for col, r in worst:
-            bar = "█" * min(int(r["psi"]/0.25*20), 20)
-            flag = "🔴" if r["status"]=="alert" else "🟡" if r["status"]=="warn" else "🟢"
+            bar = "#" * min(int(r["psi"]/0.25*20), 20)
+            flag = "[ALERT]" if r["status"]=="alert" else "[WARN]" if r["status"]=="warn" else "[OK]"
             print(f"    {flag} {col:<35s}  PSI={r['psi']:.3f}  {bar}")
     print(f"\n  High-risk rate     : {perf.get('high_risk_rate',0)*100:.1f}%")
     print(f"  Risk score mean    : {perf.get('risk_score_mean',0):.3f}")
     print(f"  Branch divergence  : {perf.get('branch_divergence_mean',0):.3f}")
-    print(f"\n  Retrain triggered  : {'YES ⚠' if triggered else 'no'}")
+    print(f"\n  Retrain triggered  : {'YES WARNING' if triggered else 'no'}")
     for r in reasons:
-        print(f"    → {r}")
-    print("═"*62 + "\n")
+        print(f"    -> {r}")
+    print("="*62 + "\n")
 
 
 def main():

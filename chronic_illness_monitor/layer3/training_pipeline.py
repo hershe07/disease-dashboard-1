@@ -1,6 +1,6 @@
 """
 layer3/training_pipeline.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 Layer 3 — model training, evaluation, artifact persistence.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from chronic_illness_monitor.settings import cfg, get_logger
 
 logger = get_logger("layer3.training_pipeline")
 
-# ── Model artifact paths ──────────────────────────────────────────────────────
+# -- Model artifact paths ------------------------------------------------------
 _MA_RF  = cfg.paths.models / "branch_a_rf.pkl"
 _MA_SVM = cfg.paths.models / "branch_a_svm.pkl"
 _MB_RF  = cfg.paths.models / "branch_b_rf.pkl"
@@ -38,9 +38,9 @@ _MB_SVM = cfg.paths.models / "branch_b_svm.pkl"
 _META   = cfg.paths.models / "model_metadata.json"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Trainer
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def _train_branch(df: pd.DataFrame, features: list[str],
                   rf_path: Path, svm_path: Path, label: str) -> tuple[Pipeline, Pipeline, dict]:
@@ -86,9 +86,9 @@ def _train_branch(df: pd.DataFrame, features: list[str],
     return rf_pipe, svm_pipe, meta
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Evaluator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 @dataclass
 class EvaluationReport:
@@ -103,23 +103,23 @@ class EvaluationReport:
     n_test:            int   = 0
 
     def summary(self):
-        lines = [f"\n{'═'*52}",
+        lines = [f"\n{'='*52}",
                  f"  Eval Branch {self.branch} — {self.model_label}",
-                 f"{'─'*52}",
+                 f"{'-'*52}",
                  f"  Test rows : {self.n_test}",
                  f"  Accuracy  : {self.accuracy:.3f}",
                  f"  F1 macro  : {self.f1_macro:.3f}",
                  f"  ROC-AUC   : {self.roc_auc:.3f}",
-                 f"{'─'*52}  Per-class F1:"]
+                 f"{'-'*52}  Per-class F1:"]
         for cls in cfg.l3.class_names:
             r = self.class_report.get(cls,{})
             lines.append(f"    {cls:<12s}  p={r.get('precision',0):.2f}  "
                          f"r={r.get('recall',0):.2f}  f1={r.get('f1-score',0):.2f}")
         if self.feature_importance:
-            lines.append(f"{'─'*52}  Top features:")
+            lines.append(f"{'-'*52}  Top features:")
             for feat,imp in sorted(self.feature_importance.items(),key=lambda x:-x[1])[:5]:
-                lines.append(f"    {feat:<32s} {imp:.3f}  {'█'*int(imp*40)}")
-        lines.append(f"{'═'*52}\n")
+                lines.append(f"    {feat:<32s} {imp:.3f}  {'#'*int(imp*40)}")
+        lines.append(f"{'='*52}\n")
         return "\n".join(lines)
 
 
@@ -155,9 +155,9 @@ def _evaluate(pipe: Pipeline, df: pd.DataFrame, features: list[str],
     return rep
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Orchestrator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def _load_features() -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load Branch A + B from Layer 2 feature store; fall back to demo data."""
@@ -199,7 +199,7 @@ def run_training() -> dict:
         ],
     }
     with open(_META,"w") as f: json.dump(metadata, f, indent=2)
-    logger.info("Metadata saved → %s", _META)
+    logger.info("Metadata saved -> %s", _META)
     return metadata
 
 
@@ -208,7 +208,7 @@ def main():
     parser.add_argument("--mode", choices=["train","dry-run"], default="dry-run")
     args = parser.parse_args()
     meta = run_training()
-    print("\n" + "═"*60 + "\n  LAYER 3 TRAINING SUMMARY\n" + "═"*60)
+    print("\n" + "="*60 + "\n  LAYER 3 TRAINING SUMMARY\n" + "="*60)
     for bk,bl in [("branch_a","Branch A (bodily)"),("branch_b","Branch B (lifestyle)")]:
         m = meta.get(bk,{})
         print(f"\n  {bl}")
@@ -216,7 +216,7 @@ def main():
         print(f"    RF  CV   : {m.get('rf_cv',{}).get('mean',0):.3f} ± {m.get('rf_cv',{}).get('std',0):.3f}")
         print(f"    SVM CV   : {m.get('svm_cv',{}).get('mean',0):.3f} ± {m.get('svm_cv',{}).get('std',0):.3f}")
         print(f"    Primary  : {meta.get('primary_model_'+bk[-1],'RF')}")
-    print(f"\n  Models → {cfg.paths.models}\n" + "═"*60+"\n")
+    print(f"\n  Models -> {cfg.paths.models}\n" + "="*60+"\n")
 
 
 if __name__ == "__main__":

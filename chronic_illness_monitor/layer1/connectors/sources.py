@@ -1,6 +1,6 @@
 """
 layer1/connectors/sources.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 All Layer 1 data source connectors in a single module.
 Imports cleanly as: from chronic_illness_monitor.layer1.connectors.sources import ...
 """
@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 
 from chronic_illness_monitor.settings import cfg, get_logger
-from chronic_illness_monitor.layer1.utils.http import fetch, fetch_paginated
+from chronic_illness_monitor.layer1.utils.http import fetch, fetch_paginated, raw_get
 from chronic_illness_monitor.layer1.models.schema import (
     IndividualRecord, PopulationRecord, EnvironmentRecord,
 )
@@ -22,9 +22,9 @@ logger = get_logger(__name__)
 _US_ISO3 = "USA"
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 1. WHO GHO
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class WHOGHOConnector:
     # Public alias preserved for backward compatibility
@@ -38,9 +38,10 @@ class WHOGHOConnector:
         return pd.DataFrame([r.__dict__ for r in all_records]) if all_records else pd.DataFrame()
 
     def _fetch_indicator(self, code, name, year_from, year_to) -> list[PopulationRecord]:
+        # WHO GHO OData API — no $filter on TimeDim (returns 400).
+        # Fetch all data with $top and filter locally by year.
         url    = f"{cfg.apis.who_gho_base}/{code}"
         params = {
-            "$filter": f"TimeDim ge {year_from} and TimeDim le {year_to}",
             "$select": "SpatialDim,SpatialDimType,TimeDim,Dim1,Dim2,NumericValue,Low,High",
             "$top": 10000,
         }
@@ -53,10 +54,17 @@ class WHOGHOConnector:
         sex_map = {"BTSX":"Both","MLE":"Male","FMLE":"Female","":"Both"}
         records = []
         for row in raw.get("value", []):
-            if row.get("SpatialDimType") != "COUNTRY": continue
+            if row.get("SpatialDimType") != "COUNTRY":
+                continue
+            # Filter by year locally
+            year = _sint(row.get("TimeDim"))
+            if year is None:
+                continue
+            if year < year_from or year > year_to:
+                continue
             records.append(PopulationRecord(
                 source="who_gho", country_iso3=row.get("SpatialDim"),
-                year=_sint(row.get("TimeDim")),
+                year=year,
                 sex=sex_map.get(row.get("Dim1",""),"Both"),
                 age_group=row.get("Dim2","") or "All ages",
                 indicator_code=code, indicator_name=name,
@@ -65,13 +73,13 @@ class WHOGHOConnector:
                 lower_ci=_sfloat(row.get("Low")),
                 upper_ci=_sfloat(row.get("High")), unit="%",
             ))
-        logger.info("  → %s records", len(records))
+        logger.info("  -> %s records", len(records))
         return records
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 2. CDC (CDI + BRFSS)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class CDCConnector:
     def _headers(self):
@@ -81,7 +89,12 @@ class CDCConnector:
         records = []
         for topic in cfg.l1.cdi_topics:
             logger.info("CDC CDI — %s", topic)
-            where = f"topic='{topic}' AND yearstart >= {year_from} AND yearend <= {year_to}"
+            # Use simple equality / range filter — Socrata SoQL
+            where = (
+                f"topic='{topic}'"
+                f" AND yearstart>={year_from}"
+                f" AND yearend<={year_to}"
+            )
             rows  = fetch_paginated(cfg.apis.cdc_cdi_endpoint,
                                     {"$where": where}, self._headers(), max_records=max_records)
             for row in rows:
@@ -100,11 +113,11 @@ class CDCConnector:
         return pd.DataFrame([r.__dict__ for r in records]) if records else pd.DataFrame()
 
     def fetch_brfss(self, year_from=2010, year_to=2023, max_records=200_000) -> pd.DataFrame:
-        logger.info("CDC BRFSS — %s–%s", year_from, year_to)
+        logger.info("CDC BRFSS — %s-%s", year_from, year_to)
         ncd_classes = ("Chronic Health Indicators","Tobacco Use",
                        "Physical Activity","Overweight and Obesity","Diabetes")
         cf  = " OR ".join([f"class='{c}'" for c in ncd_classes])
-        where = f"({cf}) AND year >= {year_from} AND year <= {year_to}"
+        where = f"({cf}) AND year>={year_from} AND year<={year_to}"
         rows  = fetch_paginated(cfg.apis.cdc_brfss_endpoint,
                                 {"$where": where}, self._headers(), max_records=max_records)
         records = [
@@ -125,9 +138,9 @@ class CDCConnector:
         return pd.DataFrame([r.__dict__ for r in records]) if records else pd.DataFrame()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 3. IHME GBD (local CSV files)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class IHMEGBDConnector:
     REQUIRED = {"measure_name","location_name","sex_name","age_name",
@@ -171,9 +184,9 @@ class IHMEGBDConnector:
         return pd.DataFrame([r.__dict__ for r in records])
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 4. Mendeley CAIR-CVD-2025 (local CSV)
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class MendeleyCAIRConnector:
     _SMOKING = {"yes":"smoker","1":"smoker","current":"smoker",
@@ -235,9 +248,9 @@ class MendeleyCAIRConnector:
         return self._ACTIVITY.get(str(val).lower().strip(), str(val).lower().strip())
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 5. World Bank
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class WorldBankConnector:
     # Public alias preserved for backward compatibility
@@ -273,13 +286,13 @@ class WorldBankConnector:
             )
             for row in (raw[1] or []) if row.get("value") is not None
         ]
-        logger.info("  → %s records", len(records))
+        logger.info("  -> %s records", len(records))
         return records
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # 6. Real-time: OpenAQ + Validic
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class OpenAQConnector:
     def __init__(self):
@@ -372,7 +385,7 @@ class ValidicConnector:
         return records
 
 
-# ── Shared helpers ────────────────────────────────────────────────────────────
+# -- Shared helpers ------------------------------------------------------------
 
 def _sfloat(v) -> Optional[float]:
     try:

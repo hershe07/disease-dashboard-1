@@ -1,4 +1,4 @@
-"""layer1/utils/http.py — shared HTTP fetch with retry + rate-limit backoff."""
+"""layer1/utils/http.py -- shared HTTP fetch with retry + rate-limit backoff."""
 import time
 import requests
 from typing import Any, Optional
@@ -11,6 +11,27 @@ MAX_RETRIES     = 3
 BACKOFF_BASE    = 2
 
 
+def raw_get(url: str, timeout: int = DEFAULT_TIMEOUT, retries: int = MAX_RETRIES) -> Any:
+    """
+    GET a URL exactly as given -- no param encoding.
+    Use this for APIs like WHO GHO where OData params ($top, $filter)
+    must not have their $ signs encoded to %24.
+    """
+    attempt = 0
+    while attempt <= retries:
+        try:
+            resp = requests.get(url, timeout=timeout)
+            if resp.status_code == 429:
+                time.sleep(BACKOFF_BASE ** attempt); attempt += 1; continue
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.Timeout:
+            attempt += 1
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(f"Cannot reach {url}") from e
+    raise RuntimeError(f"Exhausted retries for {url}")
+
+
 def fetch(url: str, params: Optional[dict] = None,
           headers: Optional[dict] = None, timeout: int = DEFAULT_TIMEOUT,
           retries: int = MAX_RETRIES) -> Any:
@@ -20,11 +41,11 @@ def fetch(url: str, params: Optional[dict] = None,
             resp = requests.get(url, params=params, headers=headers or {}, timeout=timeout)
             if resp.status_code == 429:
                 wait = BACKOFF_BASE ** attempt
-                logger.warning("Rate-limited %s — waiting %ss", url, wait)
+                logger.warning("Rate-limited %s -- waiting %ss", url, wait)
                 time.sleep(wait); attempt += 1; continue
             if resp.status_code >= 500:
                 wait = BACKOFF_BASE ** attempt
-                logger.warning("Server error %s from %s — retry in %ss",
+                logger.warning("Server error %s from %s -- retry in %ss",
                                resp.status_code, url, wait)
                 time.sleep(wait); attempt += 1; continue
             resp.raise_for_status()

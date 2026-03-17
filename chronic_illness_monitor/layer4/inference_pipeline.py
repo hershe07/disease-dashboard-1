@@ -1,6 +1,6 @@
 """
 layer4/inference_pipeline.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 Layer 4 — score fusion, warning gate, results sink.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ try:
 except ImportError:
     _HAS_SA = False
 
-# ── Model paths ───────────────────────────────────────────────────────────────
+# -- Model paths ---------------------------------------------------------------
 _MA_RF  = cfg.paths.models / "branch_a_rf.pkl"
 _MA_SVM = cfg.paths.models / "branch_a_svm.pkl"
 _MB_RF  = cfg.paths.models / "branch_b_rf.pkl"
@@ -42,9 +42,9 @@ RESULTS_PARTS  = cfg.paths.results / "partitions"
 RESULTS_PARTS.mkdir(parents=True, exist_ok=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Output record
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 @dataclass
 class ScoredRecord:
@@ -69,9 +69,9 @@ class ScoredRecord:
     )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Score engine
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class ScoreEngine:
     def __init__(self):
@@ -155,9 +155,9 @@ class ScoreEngine:
         return 4,"critical",cfg.l4.warning_gates[-1][4]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Results writer
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 class ResultsWriter:
     def __init__(self, db_url=None):
@@ -210,9 +210,9 @@ class ResultsWriter:
         return df[cfg.l4.results_columns].copy()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Orchestrator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def _load_features(patient_id=None) -> tuple[pd.DataFrame,pd.DataFrame]:
     fa = cfg.paths.feature_store / "individual_features" / "latest.parquet"
@@ -258,25 +258,25 @@ def main():
     results = run_inference(db_url=db_url, patient_id=args.patient_id,
                             dry_run=args.mode=="dry-run")
 
-    print("\n"+"═"*65+"\n  LAYER 4 INFERENCE SUMMARY\n"+"═"*65)
+    print("\n"+"="*65+"\n  LAYER 4 INFERENCE SUMMARY\n"+"="*65)
     print(f"  Patients scored : {len(results):,}")
     labels = {1:"Level 1 — low",2:"Level 2 — moderate",3:"Level 3 — high",4:"Level 4 — critical"}
     for lvl in [1,2,3,4]:
         c   = int((results["warning_level"]==lvl).sum())
         pct = c/len(results)*100
-        print(f"  {labels[lvl]:<28s}  {c:>5,}  ({pct:>5.1f}%)  {'█'*int(pct/3)}")
+        print(f"  {labels[lvl]:<28s}  {c:>5,}  ({pct:>5.1f}%)  {'#'*int(pct/3)}")
     print()
     print(results.nlargest(5,"ensemble_risk_score")[
         ["patient_id","ensemble_risk_score","warning_level","warning_label","signal_type"]
     ].to_string(index=False))
-    print("═"*65+"\n")
+    print("="*65+"\n")
 
 
 if __name__ == "__main__":
     main()
 
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+# -- Helper --------------------------------------------------------------------
 def _gv(df,i,col):
     if col not in df.columns: return None
     v = df.iloc[i].get(col)

@@ -23,7 +23,7 @@ except ImportError:
 
 
 def run_historical(year_from=2010, year_to=2023) -> dict[str, pd.DataFrame]:
-    logger.info("═══ Historical ingestion %s–%s ═══", year_from, year_to)
+    logger.info("=== Historical ingestion %s-%s ===", year_from, year_to)
     results: dict[str, pd.DataFrame] = {}
     for label, fn in [
         ("population_who_gho",  lambda: WHOGHOConnector().fetch_all(year_from, year_to)),
@@ -44,7 +44,7 @@ def run_historical(year_from=2010, year_to=2023) -> dict[str, pd.DataFrame]:
 
 
 def run_realtime(country_iso2="BD", patient_id=None) -> dict[str, pd.DataFrame]:
-    logger.info("═══ Real-time ingestion ═══")
+    logger.info("=== Real-time ingestion ===")
     results: dict[str, pd.DataFrame] = {}
     results["realtime_environment"] = OpenAQConnector().fetch_by_country(country_iso2)
     results["realtime_individual"]  = ValidicConnector().fetch_latest(patient_id=patient_id)
@@ -57,7 +57,7 @@ def sink_parquet(results: dict[str, pd.DataFrame]) -> None:
         if df.empty: continue
         out = cfg.paths.data_processed / f"{name}_{ts}.parquet"
         df.to_parquet(out, index=False)
-        logger.info("Parquet → %s (%s rows)", out.name, len(df))
+        logger.info("Parquet -> %s (%s rows)", out.name, len(df))
 
 
 def sink_db(results: dict[str, pd.DataFrame]) -> None:
@@ -67,15 +67,15 @@ def sink_db(results: dict[str, pd.DataFrame]) -> None:
     for name, df in results.items():
         if df.empty: continue
         df.to_sql(name, engine, if_exists="append", index=False, chunksize=5000)
-        logger.info("DB → %s (%s rows)", name, len(df))
+        logger.info("DB -> %s (%s rows)", name, len(df))
 
 
 def print_summary(results: dict[str, pd.DataFrame]) -> None:
-    print("\n" + "═"*60 + "\n  LAYER 1 SUMMARY\n" + "═"*60)
+    print("\n" + "="*60 + "\n  LAYER 1 SUMMARY\n" + "="*60)
     for name, df in results.items():
-        status = "✓" if len(df) else "✗"
+        status = "OK" if len(df) else "FAIL"
         print(f"  {status}  {name:<35s}  {len(df):>7,} rows")
-    print("═"*60 + "\n")
+    print("="*60 + "\n")
 
 
 def main():
@@ -98,7 +98,7 @@ def main():
         sink_db(results)
 
 
-# Demo data generator used by layers 2–4 in tests
+# Demo data generator used by layers 2-4 in tests
 def _generate_demo_data() -> dict[str, pd.DataFrame]:
     np.random.seed(42)
     n = 300

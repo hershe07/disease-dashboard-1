@@ -1,7 +1,7 @@
 """
 chronic_illness_monitor/settings.py
-─────────────────────────────────────────────────────────────────────────────
-Single source of truth for ALL configuration across layers 1–4.
+-----------------------------------------------------------------------------
+Single source of truth for ALL configuration across layers 1-4.
 Every module imports from here:
 
     from chronic_illness_monitor.settings import cfg, get_logger
@@ -12,6 +12,13 @@ sys.path shadowing bug found during integration testing.
 
 from __future__ import annotations
 import os
+import sys
+
+# Force UTF-8 output on Windows (prevents UnicodeEncodeError in logging)
+if sys.platform == "win32":
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -20,7 +27,7 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).parent
 load_dotenv(ROOT / ".env")
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# -- Logging -------------------------------------------------------------------
 _LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 _LOG_DIR   = ROOT / "logs"
 _LOG_DIR.mkdir(exist_ok=True)
@@ -38,7 +45,7 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# -- Paths ---------------------------------------------------------------------
 class _Paths:
     root             = ROOT
     data_raw         = ROOT / "data" / "raw"
@@ -57,7 +64,7 @@ class _Paths:
             p.mkdir(parents=True, exist_ok=True)
 
 
-# ── Database ──────────────────────────────────────────────────────────────────
+# -- Database ------------------------------------------------------------------
 class _Database:
     host     = os.getenv("DB_HOST",     "localhost")
     port     = os.getenv("DB_PORT",     "5432")
@@ -67,7 +74,7 @@ class _Database:
     url      = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{name}"
 
 
-# ── External API credentials ──────────────────────────────────────────────────
+# -- External API credentials --------------------------------------------------
 class _APIs:
     who_gho_base      = os.getenv("WHO_GHO_BASE_URL",  "https://ghoapi.azureedge.net/api")
     cdc_app_token     = os.getenv("CDC_APP_TOKEN",     "")
@@ -81,7 +88,7 @@ class _APIs:
     validic_base      = os.getenv("VALIDIC_BASE_URL",  "https://app.validic.com/v1")
 
 
-# ── Layer 1 — Data source definitions ────────────────────────────────────────
+# -- Layer 1 — Data source definitions ----------------------------------------
 class _Layer1:
     who_indicators = {
         "BP_PREVALENCE":       "NCD_HYP_PREVALENCE_A",
@@ -114,7 +121,7 @@ class _Layer1:
     ]
 
 
-# ── Layer 2 — ETL / feature engineering constants ────────────────────────────
+# -- Layer 2 — ETL / feature engineering constants ----------------------------
 class _Layer2:
     individual_numeric_cols = [
         "age","weight_kg","height_m","bmi","abdominal_circ_cm",
@@ -151,7 +158,7 @@ class _Layer2:
     age_labels = ["0-14","15-29","30-44","45-59","60-74","75+"]
 
 
-# ── Layer 3 — ML model constants ──────────────────────────────────────────────
+# -- Layer 3 — ML model constants ----------------------------------------------
 class _Layer3:
     # Verified against Layer 2 live output (300 rows, 0 nulls)
     branch_a_features = [
@@ -194,7 +201,7 @@ class _Layer3:
     }
 
 
-# ── Layer 4 — Inference / warning engine constants ────────────────────────────
+# -- Layer 4 — Inference / warning engine constants ----------------------------
 class _Layer4:
     ensemble_weight_a = 0.60   # bodily-similarity branch
     ensemble_weight_b = 0.40   # lifestyle/environment branch
@@ -216,7 +223,7 @@ class _Layer4:
     ]
 
 
-# ── Single cfg object — import this everywhere ────────────────────────────────
+# -- Single cfg object — import this everywhere --------------------------------
 class _Config:
     paths  = _Paths()
     db     = _Database()

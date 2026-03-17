@@ -1,6 +1,6 @@
 """
 layer6/sink_pipeline.py
-─────────────────────────────────────────────────────────────────────────────
+-----------------------------------------------------------------------------
 Layer 6 — Production Data Sink + Tableau-Ready Views
 
 Responsibilities:
@@ -41,13 +41,13 @@ from chronic_illness_monitor.settings import cfg, get_logger
 
 logger = get_logger("layer6.sink_pipeline")
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# -- Paths ---------------------------------------------------------------------
 SINK_DIR      = cfg.paths.results / "tableau"
 SINK_DIR.mkdir(parents=True, exist_ok=True)
 SQLITE_DB     = SINK_DIR / "chronic_illness_monitor.db"
 DATA_DICT     = SINK_DIR / "data_dictionary.csv"
 
-# ── SQLAlchemy (optional — for PostgreSQL) ────────────────────────────────────
+# -- SQLAlchemy (optional — for PostgreSQL) ------------------------------------
 try:
     from sqlalchemy import create_engine
     _HAS_SA = True
@@ -55,9 +55,9 @@ except ImportError:
     _HAS_SA = False
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # View builders
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def build_patient_risk_scores(results_path: Path) -> pd.DataFrame:
     """
@@ -255,9 +255,9 @@ def build_model_health_view(monitoring_report_path: Path) -> pd.DataFrame:
     return df
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # DB writers
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def write_to_sqlite(views: dict[str, pd.DataFrame]) -> None:
     """Write all views to SQLite — always available, no credentials needed."""
@@ -268,7 +268,7 @@ def write_to_sqlite(views: dict[str, pd.DataFrame]) -> None:
                 logger.warning("Skipping empty view: %s", table_name)
                 continue
             df.to_sql(table_name, conn, if_exists="replace", index=False)
-            logger.info("SQLite → %s (%s rows)", table_name, len(df))
+            logger.info("SQLite -> %s (%s rows)", table_name, len(df))
         conn.commit()
 
         # Create useful indices for Tableau query performance
@@ -288,7 +288,7 @@ def write_to_sqlite(views: dict[str, pd.DataFrame]) -> None:
             except sqlite3.OperationalError:
                 pass
         conn.commit()
-        logger.info("SQLite DB written → %s", SQLITE_DB)
+        logger.info("SQLite DB written -> %s", SQLITE_DB)
     finally:
         conn.close()
 
@@ -305,7 +305,7 @@ def write_to_postgres(views: dict[str, pd.DataFrame]) -> None:
                 continue
             df.to_sql(table_name, engine, if_exists="replace",
                       index=False, chunksize=5000)
-            logger.info("PostgreSQL → %s (%s rows)", table_name, len(df))
+            logger.info("PostgreSQL -> %s (%s rows)", table_name, len(df))
     except Exception as exc:
         logger.warning("PostgreSQL write failed: %s — SQLite only", exc)
 
@@ -317,12 +317,12 @@ def write_csv_exports(views: dict[str, pd.DataFrame]) -> None:
             continue
         out = SINK_DIR / f"{name}.csv"
         df.to_csv(out, index=False)
-        logger.info("CSV export → %s (%s rows)", out.name, len(df))
+        logger.info("CSV export -> %s (%s rows)", out.name, len(df))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Data dictionary
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 _DATA_DICT: list[dict] = [
     # patient_risk_scores
@@ -330,7 +330,7 @@ _DATA_DICT: list[dict] = [
     {"view":"patient_risk_scores",    "column":"country_iso3",          "type":"str",  "description":"ISO 3166-1 alpha-3 country code"},
     {"view":"patient_risk_scores",    "column":"age_group_bin",         "type":"str",  "description":"WHO age band (0-14, 15-29, 30-44, 45-59, 60-74, 75+)"},
     {"view":"patient_risk_scores",    "column":"sex",                   "type":"str",  "description":"Patient sex (Male / Female / Both)"},
-    {"view":"patient_risk_scores",    "column":"ensemble_risk_score",   "type":"float","description":"Weighted ensemble probability of high-risk class (0–1)"},
+    {"view":"patient_risk_scores",    "column":"ensemble_risk_score",   "type":"float","description":"Weighted ensemble probability of high-risk class (0-1)"},
     {"view":"patient_risk_scores",    "column":"warning_level",         "type":"int",  "description":"Warning level 1=low 2=moderate 3=high 4=critical"},
     {"view":"patient_risk_scores",    "column":"warning_label",         "type":"str",  "description":"Warning level label"},
     {"view":"patient_risk_scores",    "column":"warning_message",       "type":"str",  "description":"Clinical action message"},
@@ -365,12 +365,12 @@ _DATA_DICT: list[dict] = [
 
 def write_data_dictionary() -> None:
     pd.DataFrame(_DATA_DICT).to_csv(DATA_DICT, index=False)
-    logger.info("Data dictionary → %s", DATA_DICT)
+    logger.info("Data dictionary -> %s", DATA_DICT)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 # Orchestrator
-# ══════════════════════════════════════════════════════════════════════════════
+# ==============================================================================
 
 def run_sink(results_path: Optional[Path] = None,
              write_postgres: bool = False) -> dict[str, pd.DataFrame]:
@@ -378,7 +378,7 @@ def run_sink(results_path: Optional[Path] = None,
     Main entry point called by Snakemake after Layer 5.
     Builds all four views, writes SQLite + optional PG + CSV exports.
     """
-    logger.info("═══ Layer 6: Production Sink ═══")
+    logger.info("=== Layer 6: Production Sink ===")
 
     # Resolve paths
     if results_path is None:
@@ -413,34 +413,34 @@ def run_sink(results_path: Optional[Path] = None,
 
 
 def _print_summary(views: dict[str, pd.DataFrame]) -> None:
-    print("\n" + "═"*62)
+    print("\n" + "="*62)
     print("  LAYER 6 SINK SUMMARY")
-    print("═"*62)
+    print("="*62)
     total = 0
     for name, df in views.items():
         rows = len(df)
         cols = len(df.columns) if not df.empty else 0
-        print(f"  {'✓' if rows else '✗'}  {name:<35s}  {rows:>6,} rows  {cols} cols")
+        print(f"  {'OK' if rows else 'FAIL'}  {name:<35s}  {rows:>6,} rows  {cols} cols")
         total += rows
-    print(f"{'─'*62}")
+    print(f"{'-'*62}")
     print(f"  {'Total':<38s}  {total:>6,} rows")
-    print(f"\n  SQLite  → {SQLITE_DB}")
-    print(f"  CSVs    → {SINK_DIR}/")
-    print(f"  Dict    → {DATA_DICT.name}")
-    print("═"*62)
+    print(f"\n  SQLite  -> {SQLITE_DB}")
+    print(f"  CSVs    -> {SINK_DIR}/")
+    print(f"  Dict    -> {DATA_DICT.name}")
+    print("="*62)
     print()
     print("  Tableau connection instructions:")
-    print("  ─────────────────────────────────────────────────────")
-    print("  Option A (SQLite):  Connect → More → SQLite")
+    print("  -----------------------------------------------------")
+    print("  Option A (SQLite):  Connect -> More -> SQLite")
     print(f"                      File: {SQLITE_DB}")
-    print("  Option B (PG):      Connect → PostgreSQL")
+    print("  Option B (PG):      Connect -> PostgreSQL")
     print(f"                      Host={cfg.db.host}  DB={cfg.db.name}")
-    print("  Option C (CSV):     Connect → Text File → any CSV in")
+    print("  Option C (CSV):     Connect -> Text File -> any CSV in")
     print(f"                      {SINK_DIR}/")
-    print("═"*62 + "\n")
+    print("="*62 + "\n")
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# -- Helpers -------------------------------------------------------------------
 
 def _clinical_group(feature: str) -> str:
     """Map feature names to clinical groups for Tableau colour-coding."""
